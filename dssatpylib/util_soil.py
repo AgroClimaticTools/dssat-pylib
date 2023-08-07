@@ -87,6 +87,8 @@ def read_soil_profile(soilFilePath: str, soil_id: str, OnlyText: bool = False):
     with open(soilFilePath) as Fsoil:
         param = 0
         for line in Fsoil:
+            if line.startswith('!'):
+                continue
             if line.startswith(soil_id):
                 param = 1
                 soil_text = soil_text + line
@@ -221,8 +223,8 @@ def update_soil_layer_param(soilFilePath: str, soil_id: str, param_name_list: li
     '''
     soil_info_df, soil_layered_info_df, soil_lines, old_soil_profile, \
                   headertext_list = read_soil_profile(soilFilePath, soil_id)
-
-    soil_layered_info_df.loc[:, param_name_list] = param_values_list            # type: ignore
+    for i, param_name in enumerate(param_name_list):
+        soil_layered_info_df.loc[:, param_name] = param_values_list[i]          # type: ignore
         
     new_soil_profile = create_soil_profile(soil_layered_info_df,
                                            soil_info_df, headertext_list)
