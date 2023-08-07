@@ -8,10 +8,12 @@ Description: Utility functions to extract the DSSAT outputs from DSSAT generated
 """
 '=============================================================================='
 
-import pandas as pd
-import numpy as np
-from datetime import datetime, date, timedelta
+import os
+from datetime import date, datetime, timedelta
+from pathlib import Path
 
+import numpy as np
+import pandas as pd
 
 '____________________________ function to check float__________________________'
 
@@ -74,7 +76,7 @@ def Read_DSSAT_Output(filePath: str):
         data = []
         crops = []
         runs = []
-        for line in f.readlines():
+        for line in f:
             if line.startswith('*RUN'):
                 runs.append(line.strip().split()[1])
             elif line.startswith(' MODEL'):
@@ -92,6 +94,7 @@ def Read_DSSAT_Output(filePath: str):
     if 'Plant' in filePath:
         df_list = [pd.DataFrame.from_records(data[i][1:], columns=data[i][0])
                    for i in range(len(data))]
+        print(df_list, filePath)
         return df_list, crops
 
     else:
@@ -131,16 +134,15 @@ def extract_required_dssat_outputs(filePath: str, paramList: list[str],
     '''
 
     'Reading file using Read_DSSAT_OUTPUT func'
-    try:
+    if 'Plant' in filePath:
         all_dssat_outputs, crops = Read_DSSAT_Output(filePath)
-    except:
+    else:
         all_dssat_outputs = Read_DSSAT_Output(filePath)
-
 
     'nRuns = number of Runs/Treatments'
     nRuns = len(all_dssat_outputs)
     df_list = []
-
+    
     for r in range(nRuns):
         year = [int(Val) for Val in all_dssat_outputs[r]['YEAR']]               #type: ignore
         doy = [int(Val) for Val in all_dssat_outputs[r]['DOY']]                 #type: ignore
@@ -298,9 +300,9 @@ def SoilWat(fileDir: str, paramList: list[str], daily: bool = True):
     
     '''
 
-    filePath = fileDir + '//SoilWat.OUT'
+    filePath = Path(fileDir) / 'SoilWat.OUT'
     cum_param_list = ['ROFC', 'DRNC', 'PREC', 'IR#C', 'IRRC', 'TDFC']
-    df_outputs = extract_required_dssat_outputs(filePath, paramList, 
+    df_outputs = extract_required_dssat_outputs(str(filePath), paramList, 
                                                 cum_param_list, daily, 
                                                 crop_sequence=False)
     return df_outputs
@@ -456,26 +458,38 @@ def read_dssat_obsdata(filePath: str, paramList: list = ['ALL']):
     Read DSSAT experiment observation file
     Initially build to read Potato- *.PTT file but could be used for other crops
 
-    :param    filePath: complete file path to *.*TT file
+    :param    filePath: complete file path to *.*TT file or *.csv file in same
+                        format
     :param   paramList: list of output parameters needed or 'ALL' for all the 
                         parameters
 
     :return df: Pandas dataframes of required DSSAT outputs
     
     '''
+    if filePath.endswith('.csv'):
+        try: 
+            df = pd.read_csv(filePath, parse_dates=['DATE'])
+            df['DATE'] = [val.to_pydatetime().date()
+                          for val in df['DATE']]
+        except: df = pd.read_csv(filePath)
+    else:
+        df = pd.read_fwf(filePath, colspecs='infer', infer_nrows=100,
+                         skiprows=5)
+    if not isinstance(df['DATE'][0], date):
+        df['DATE'] = [date(2000+int(str(val)[:2]), 1, 1) + \
+                       timedelta(int(str(val)[-3:])-1)
+                       for val in df.loc[:, 'DATE'].values]        
 
-    df = pd.read_fwf(filePath, colspecs='infer', infer_nrows=100, skiprows=5)
     df.replace(-99.0, np.nan, inplace=True)
-    df['DATE'] = [date(2000+int(str(val)[:2]), 1, 1) + \
-                  timedelta(int(str(val)[-3:])-1)
-                  for val in df.loc[:, 'DATE'].values]
-    df.set_index(['@TRNO', 'DATE'], inplace=True)
+    try: df.rename(columns={'@TRNO':'TRNO'}, inplace=True)
+    except: pass
+    df.set_index(['TRNO', 'DATE'], inplace=True)
 
     'If all parameters are required to fetch'
     'Else listed parameters while calling this func'
     if paramList[0] == 'ALL':
-        return df
+        return df.sort_index()
     else:
-        return df.loc[:,paramList]
+        return df.loc[:,paramList].sort_index()
 
 '=============================================================================='
