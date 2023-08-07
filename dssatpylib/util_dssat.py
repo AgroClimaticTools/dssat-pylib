@@ -23,6 +23,7 @@ def date2dssatDate(anydate):
     return str(int(anydate.year))[-2:] + julianDay(anydate).zfill(3)
 
 def dssatDate2date(dssatDate):
+    dssatDate = str(int(dssatDate))
     yy = dssatDate[:2]
     julianDay = int(dssatDate[2:])
     if int(yy) >= 86:
@@ -58,7 +59,7 @@ def run_dssat(ExpFilePath):
 '____________________________ Create DSSBatch File ____________________________'
 
 def create_DSSBatch(ExpFilePath: str, crop: str = 'Sequence', 
-                    command: str = 'DSCSM047.EXE Q DSSBatch.v47'):
+                    command: str = 'DSCSM048.EXE Q DSSBatch.v48'):
     
     splited_path = ExpFilePath.split('//')
     sep='//'
