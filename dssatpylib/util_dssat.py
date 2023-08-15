@@ -12,6 +12,7 @@ Description: To run DSSAT and update DSSBatch.v47 based on exp. file
 import os
 import pandas as pd
 from datetime import date, timedelta
+from typing import Optional
 
 
 '========================= DSSAT Formatting Functions ========================='
@@ -58,7 +59,7 @@ def run_dssat(ExpFilePath):
 
 '____________________________ Create DSSBatch File ____________________________'
 
-def create_DSSBatch(ExpFilePath: str, crop: str = 'Sequence', 
+def create_DSSBatch(ExpFilePath: str, selected_treatments: list[str], 
                     command: str = 'DSCSM048.EXE Q DSSBatch.v48'):
     
     splited_path = ExpFilePath.split('//')
@@ -85,30 +86,27 @@ def create_DSSBatch(ExpFilePath: str, crop: str = 'Sequence',
                 break
             if param == 1:
                 treatments_text = line
-                TRTNO.append(treatments_text[:2])
-                SQ.append(treatments_text[2:4])
-                OP.append(treatments_text[4:6])
-                CO.append(treatments_text[6:8])
-                TNAME.append(treatments_text[9:33])
+                if treatments_text[9:33].strip() in selected_treatments:
+                    TRTNO.append(treatments_text[:2])
+                    SQ.append(treatments_text[2:4])
+                    OP.append(treatments_text[4:6])
+                    CO.append(treatments_text[6:8])
+                    TNAME.append(treatments_text[9:33])
     treatment_df = pd.DataFrame({'TRTNO' : TRTNO, 'SQ' : SQ,
                                  'OP': OP, 'CO': CO})
     directory = ExpDir
     batch_text = '$BATCH(%s)' % ('Sequence'.upper()) + '\n' + '!' + '\n'
-    batch_text = batch_text + '! Directory    : %s' % (directory) + '\n'  
-    batch_text = batch_text + '! Command Line : %s' % (cmd_line) + '\n'
-    batch_text = batch_text + '! Crop         : %s' % (crop) + '\n'
-    batch_text = batch_text + '! Experiment   : %s' % (ExpFile) + '\n'
-    batch_text = batch_text + '! ExpNo        : 1' + '\n'
-    batch_text = batch_text + '! Debug        : %s' % (cmd_line) + '\n' + '!' + '\n'
     batch_text = batch_text + '@FILEX                                                                                        TRTNO     RP     SQ     OP     CO\n'
     
     for row in range(treatment_df.shape[0]):
-        batch_text = batch_text + ExpFile.ljust(94) + \
-            treatment_df.loc[row, 'TRTNO'].rjust(5) + \
-            treatment_df.loc[row, 'OP'].rjust(7) + \
-            treatment_df.loc[row, 'SQ'].rjust(7) + \
-            treatment_df.loc[row, 'OP'].rjust(7) + \
-            treatment_df.loc[row, 'CO'].rjust(7) + '\n'
+        batch_text = ''.join([batch_text, 
+                              ExpFile.ljust(94),
+                              treatment_df.loc[row, 'TRTNO'].rjust(5), 
+                              treatment_df.loc[row, 'OP'].rjust(7),
+                              treatment_df.loc[row, 'SQ'].rjust(7),
+                              treatment_df.loc[row, 'OP'].rjust(7),
+                              treatment_df.loc[row, 'CO'].rjust(7),
+                              '\n'])                                            # type: ignore
     with open(DSSBatchFile, 'w') as Fbatch:
         Fbatch.write(batch_text)
     return None
