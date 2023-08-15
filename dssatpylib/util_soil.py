@@ -89,7 +89,7 @@ def read_soil_profile(soilFilePath: str, soil_id: str, OnlyText: bool = False):
         for line in Fsoil:
             if line.startswith('!'):
                 continue
-            if line.startswith(soil_id):
+            if line.startswith('*'+soil_id):
                 param = 1
                 soil_text = soil_text + line
                 soil_lines.append(line)
