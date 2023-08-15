@@ -8,12 +8,13 @@ Description: Utility functions to extract the DSSAT outputs from DSSAT generated
 """
 '=============================================================================='
 
-import os
-from datetime import date, datetime, timedelta
-from pathlib import Path
-
+import re
 import numpy as np
 import pandas as pd
+# import polars as pl
+
+from pathlib import Path
+from datetime import date, datetime, timedelta
 
 '____________________________ function to check float__________________________'
 
@@ -51,6 +52,30 @@ def cum2daily(cumdata: list[float]) -> list[float]:
             dailydata.append(cumdata[i]-cumdata[i-1])
     return dailydata
 
+'_____________ function to get data chunk indices from text file ______________'
+
+def get_dataChunk_indices(text: str) -> zip:
+    '''
+    Read the text from the dssat *.OUT files to return zip containing the 
+    begining and ending indices of data in the file
+
+    :param       text: text from the dssat *.OUT file in str
+    :return       zip: zip containing the begining and ending indices of data 
+                       in the file
+    
+    '''
+
+    dataBegin_idx = [m.start()  for m in re.finditer('YEAR', text)]
+    newLine_idx = [m.start()  for m in re.finditer(r"\n\n", text)]
+    lastLine_idx = [m.start()  for m in re.finditer(r"\n", text)][-1]
+    dataEnd_idx = []
+    for db in dataBegin_idx:
+        for nl in newLine_idx:
+            if nl>db:
+                dataEnd_idx.append(nl)
+                break
+    dataEnd_idx.append(lastLine_idx)
+    return zip(dataBegin_idx, dataEnd_idx)
 
 '________________________ function to read DSSAT Outputs ______________________'
 
@@ -71,36 +96,20 @@ def Read_DSSAT_Output(filePath: str):
                              output file of DSSAT is read.    
     
     '''
-    with open(filePath, 'r') as f:
-        n = 0
-        data = []
-        crops = []
-        runs = []
-        for line in f:
-            if line.startswith('*RUN'):
-                runs.append(line.strip().split()[1])
-            elif line.startswith(' MODEL'):
-                crops.append(line.strip().split(' - ')[-1])
-            elif line.startswith('@'):
-                n = 1
-                header = line[1:].replace('.', '').strip().split()
-                data.append([header])
-            elif line.startswith('\n'):
-                n = 0
-            if n == 1 and not line.startswith('@'):
-                data[-1].append(line.strip().split())
+    with open(filePath, 'r') as file:
+        lines = file.read()
     
-    # PlantGro.OUT/PlantN.OUT
+    data = ([line.strip().split() for line in lines[beg:end].split('\n')]
+            for beg, end in get_dataChunk_indices(lines))
+    
+    df_gen = (pd.DataFrame.from_records(data[1:], columns=data[0]) for data in data)
+    
     if 'Plant' in filePath:
-        df_list = [pd.DataFrame.from_records(data[i][1:], columns=data[i][0])
-                   for i in range(len(data))]
-        print(df_list, filePath)
-        return df_list, crops
+        crops = (line.strip().split(' - ')[-1] 
+                 for line in lines.split('\n') if line.startswith(' MODEL'))
+        return df_gen, crops
 
-    else:
-        df_list = [pd.DataFrame.from_records(data[i][1:], columns=data[i][0])
-                   for i in range(len(data))]
-        return df_list
+    return df_gen
 
 
 '__________________________ function for Summary.OUT __________________________'
@@ -138,27 +147,25 @@ def extract_required_dssat_outputs(filePath: str, paramList: list[str],
         all_dssat_outputs, crops = Read_DSSAT_Output(filePath)
     else:
         all_dssat_outputs = Read_DSSAT_Output(filePath)
-
-    'nRuns = number of Runs/Treatments'
-    nRuns = len(all_dssat_outputs)
-    df_list = []
     
-    for r in range(nRuns):
-        year = [int(Val) for Val in all_dssat_outputs[r]['YEAR']]               #type: ignore
-        doy = [int(Val) for Val in all_dssat_outputs[r]['DOY']]                 #type: ignore
+    df_list = []
+    'r = Run/Treatment'
+    for r, dssat_outputs in enumerate(all_dssat_outputs):
+        year = (int(Val) for Val in dssat_outputs['YEAR'])                      #type: ignore
+        doy = (int(Val) for Val in dssat_outputs['DOY'])                        #type: ignore
         year_doy = zip(year, doy)
         dates = [date(year, 1, 1) + timedelta(doy-1) for year, doy in year_doy]
         rData = {}
         for prm in paramList:
-            if prm in all_dssat_outputs[r].columns.values:                      #type: ignore
+            if prm in dssat_outputs.columns:                                    #type: ignore
                 if daily == True and \
                         prm in cum_param_list:
                     'cum2daily converts cumulative values to daily'
                     rData[prm] = cum2daily([float(Val)
-                                        for Val in all_dssat_outputs[r][prm]])  #type: ignore
+                                        for Val in dssat_outputs[prm]])         #type: ignore
                 else:
                     rData[prm] = [float(Val)
-                                  for Val in all_dssat_outputs[r][prm]]         #type: ignore
+                                  for Val in dssat_outputs[prm]]                #type: ignore
             else:
                 rData[prm] = [np.nan for _ in dates]
         df = pd.DataFrame(rData)
@@ -478,11 +485,13 @@ def read_dssat_obsdata(filePath: str, paramList: list = ['ALL']):
     if not isinstance(df['DATE'][0], date):
         df['DATE'] = [date(2000+int(str(val)[:2]), 1, 1) + \
                        timedelta(int(str(val)[-3:])-1)
-                       for val in df.loc[:, 'DATE'].values]        
+                       for val in df.loc[:, 'DATE'].values]
 
     df.replace(-99.0, np.nan, inplace=True)
+    
     try: df.rename(columns={'@TRNO':'TRNO'}, inplace=True)
     except: pass
+    
     df.set_index(['TRNO', 'DATE'], inplace=True)
 
     'If all parameters are required to fetch'
@@ -491,5 +500,76 @@ def read_dssat_obsdata(filePath: str, paramList: list = ['ALL']):
         return df.sort_index()
     else:
         return df.loc[:,paramList].sort_index()
+
+'___________________________ functions to read X file _________________________'
+
+def delimitate_header_indices(section_header_str):
+    start_indices = [0]+[i for i, character in enumerate(section_header_str)
+                           if character == ' ' and section_header_str[i+1] != ' ']
+    end_indices = start_indices[1:] + [len(section_header_str)+20]
+    return list(zip(start_indices, end_indices))
+
+def sep_sections_in_dict(exp_file):
+    with open(exp_file, 'r') as opened_exp_file:
+        sec_str_dict = {}
+        startfilling = False
+        each_sec = ''
+        sec_title = ''
+        for line in opened_exp_file.readlines():
+            if line.startswith('!'):
+                continue
+            if line.startswith('*'):
+                startfilling = True
+                sec_title = line.strip().split(':')[0][1:].split('  ')[0]
+            if sec_title == 'SIMULATION':
+                each_sec = each_sec + line
+            else:
+                if startfilling:
+                    each_sec = each_sec + line
+                if line.startswith('\n'):
+                    sec_str_dict[sec_title] = each_sec
+                    startfilling = False
+                    each_sec = ''
+        if sec_title == 'SIMULATION':
+            sec_str_dict[sec_title] = each_sec
+    return sec_str_dict
+
+def get_section_txt(exp_file, section_name):
+    with open(exp_file, 'r') as opened_exp_file:
+        fileText = opened_exp_file.read()
+    regex = "(?<="+section_name+"\n)(.*?)(?=\n\n)(?s)"
+    sec_text = re.search(regex, fileText)
+    if sec_text != None:
+        return (sec_text.group(0))
+    else:
+        return None
+
+def get_section_df(exp_file: Path, section_name: str):
+    section_str_dict = sep_sections_in_dict(exp_file)
+    section_str = section_str_dict[section_name]
+    # section_str = '\n'+get_section_txt(exp_file, section_name) + '\n\n'
+    all_section_rows = section_str.split('\n')[1:-2]
+    tables_in_section_rows = []
+    for section_row in all_section_rows:
+        if section_row.startswith('@'):
+            tables_in_section_rows.append([])
+            tables_in_section_rows[-1].append(section_row)
+        else:
+            tables_in_section_rows[-1].append(section_row)
+    df_list = []
+    header_indices_list = []
+    for table_row in tables_in_section_rows:        
+        section_header_str = table_row[0]
+        section_data_str_list = table_row[1:]
+        data_rows = []
+        header_indices = delimitate_header_indices(section_header_str)
+        for section_data_str in section_data_str_list:
+            data_rows.append([section_data_str[i:j].strip()
+                             for i, j in header_indices])
+        sec_header = section_header_str.split()
+        df = pd.DataFrame(data=data_rows, columns=sec_header)
+        df_list.append(df)
+        header_indices_list.append(header_indices)
+    return df_list, header_indices_list
 
 '=============================================================================='
