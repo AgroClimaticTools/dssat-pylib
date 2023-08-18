@@ -15,19 +15,20 @@ import pandas as pd
 
 from pathlib import Path
 from datetime import date, datetime, timedelta
+from typing import Union
 
 '____________________________ function to check float__________________________'
 
-def isfloat(var):
+def isfloat(value: Union[float, str, int]) -> bool:
     '''
-    Check if the variable provided is float or not
+    Check if the value is float
+    
+    :param value: str/float/int to check for float
 
-    :param   var: any data type variable
-    :return bool: 'True' if var is float else 'False'
-
+    :return bool: if float returns True else False
     '''
     try:
-        float(var)
+        float(value)
         return True
     except ValueError:
         return False
@@ -399,6 +400,15 @@ def CN_Ratio(fileDir: str):
 '_______________________ function for SoilWatBal.OUT __________________________'
 
 def SoilWatBal(fileDir: str, RunStart: int=1, RunEnd = 'last'):
+    """
+    Extract the soil water balance from SoilWatBal.OUT file
+
+    :param     fileDir: complete file directory of SoilWatBal.OUT file
+    :param    RunStart: Starting Run, defaults to 1
+    :param      RunEnd: Ending Run, defaults to 'last'
+    :return         df: Pandas dataframes of required DSSAT outputs
+
+    """    
     File = fileDir + '//SoilWatBal.OUT'        
     WatBalData = {'Run'               : [], 'Treatment Name'    : [],
                   'Planting Dates'    : [], 'Harvesting Dates'  : [],

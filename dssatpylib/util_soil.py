@@ -7,15 +7,17 @@ Description: To read, update and create soil profile in any *.SOL file
 """
 
 import pandas as pd
+from typing import Union
 
 '============================= utility functions =============================='
 
 '_______________________________ Check if float _______________________________'
-def isfloat(value):
+
+def isfloat(value: Union[float, str, int]) -> bool:
     '''
     Check if the value is float
     
-    :param value: str/floar/int to check for float
+    :param value: str/float/int to check for float
 
     :return bool: if float returns True else False
     '''
@@ -60,7 +62,8 @@ def formatInput(input_to_format, space_available: int, decimal: int = 0) -> str:
 
 '________________________ function for read *.SOL file ________________________'
 
-def read_soil_profile(soilFilePath: str, soil_id: str, OnlyText: bool = False):
+def read_soil_profile(soilFilePath: str, soil_id: str, OnlyText: bool = False) \
+    -> list[pd.DataFrame, pd.DataFrame, list[str], str, list[str]]:
     '''
     Read the soil data from *.SOL file of the DSSAT
     
@@ -119,7 +122,7 @@ def read_soil_profile(soilFilePath: str, soil_id: str, OnlyText: bool = False):
     # print(headertext_list)
     
     return [soil_info_df, soil_layered_info_df, 
-            soil_lines, soil_text, headertext_list]
+            soil_lines, soil_text, headertext_list]                             # type: ignore
 
 
 '______________________ function for generate *.SOL file ______________________'
@@ -224,7 +227,10 @@ def update_soil_layer_param(soilFilePath: str, soil_id: str, param_name_list: li
     soil_info_df, soil_layered_info_df, soil_lines, old_soil_profile, \
                   headertext_list = read_soil_profile(soilFilePath, soil_id)
     for i, param_name in enumerate(param_name_list):
-        soil_layered_info_df.loc[:, param_name] = param_values_list[i]          # type: ignore
+        if param_name in soil_layered_info_df.columns:
+            soil_layered_info_df.loc[:, param_name] = param_values_list[i]      # type: ignore
+        if param_name in soil_info_df.columns:
+            soil_info_df.loc[:, param_name] = param_values_list[i]              # type: ignore
         
     new_soil_profile = create_soil_profile(soil_layered_info_df,
                                            soil_info_df, headertext_list)
@@ -236,17 +242,15 @@ def update_soil_layer_param(soilFilePath: str, soil_id: str, param_name_list: li
 
 '=============================================================================='
 
-if __name__ == "__main__":
-
-    # soil_file = r'C:\DSSAT47\Soil\SOIL.SOL'
-    soil_file = r'C:\Users\r.gupta\Local Storage\DSSAT Multiprocessing\DSSAT Input Files\SOIL.SOL'
-    soil_id = '*IB00000007'
-    soil_info_df, soil_layered_info_df, soil_lines, old_soil_profile, headertext \
-        = read_soil_profile(soil_file, soil_id)
-    soil_lines = read_soil_profile(soil_file, soil_id, OnlyText=True)
-    # print(soil_lines)
-    soil_file = r'C:\Users\r.gupta\Local Storage\DSSAT Multiprocessing\DSSAT Input Files\SOIL1.SOL'
-    with open(soil_file,'w') as f:
-        f.write(soil_lines)                                                     # type: ignore
-    new_soil_profile = create_soil_profile(soil_layered_info_df, soil_info_df, headertext)
-    update_soil_profile(soil_file, old_soil_profile, new_soil_profile)
+# if __name__ == "__main__":
+#     soil_file = r'C:\DSSAT47\Soil\SOIL.SOL'
+#     soil_id = '*IB00000007'
+#     soil_info_df, soil_layered_info_df, soil_lines, old_soil_profile, headertext \
+#         = read_soil_profile(soil_file, soil_id)
+#     soil_lines = read_soil_profile(soil_file, soil_id, OnlyText=True)
+#     print(soil_lines)
+#     soil_file = r'C:\Users\r.gupta\Local Storage\DSSAT Multiprocessing\DSSAT Input Files\SOIL1.SOL'
+#     with open(soil_file,'w') as f:
+#         f.write(soil_lines)                                                     # type: ignore
+#     new_soil_profile = create_soil_profile(soil_layered_info_df, soil_info_df, headertext)
+#     update_soil_profile(soil_file, old_soil_profile, new_soil_profile)

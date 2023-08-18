@@ -17,13 +17,34 @@ from typing import Optional
 
 '========================= DSSAT Formatting Functions ========================='
 
-def julianDay(anydate): 
+def julianDay(anydate: date):
+    """
+    Calculates julian days from any date in python date format
+
+    :param anydate: date in python date format datetime.date(yyyy, m, d)
+    :return       : Julian day for the given date
+
+    """    
     return str((anydate - date(int(anydate.year), 1, 1)).days + 1)
 
-def date2dssatDate(anydate): 
+def date2dssatDate(anydate: date): 
+    """
+    Converts a date to dssat date format
+
+    :param anydate: date in python date format datetime.date(yyyy, m, d)
+    :return       : dssat date 2-digit year format in str
+
+    """    
     return str(int(anydate.year))[-2:] + julianDay(anydate).zfill(3)
 
 def dssatDate2date(dssatDate):
+    """
+    Converts a dssat date format to python date format
+
+    :param dssatDate: dssat date 2-digit year format in str
+    :return         : date in python date format datetime.date(yyyy, m, d)
+
+    """    
     dssatDate = str(int(dssatDate))
     yy = dssatDate[:2]
     julianDay = int(dssatDate[2:])
@@ -40,6 +61,12 @@ def dssatDate2date(dssatDate):
 '_________________________________ Run DSSAT __________________________________'
 
 def run_dssat(ExpFilePath):
+    """
+    Run the DSSAT model
+
+    :param ExpFilePath: DSSAT X file complete path in str
+
+    """    
     splited_path = ExpFilePath.split('//')
     sep = '//'
     if len(splited_path) == 1:
@@ -61,7 +88,16 @@ def run_dssat(ExpFilePath):
 
 def create_DSSBatch(ExpFilePath: str, selected_treatments: list[str], 
                     command: str = 'DSCSM048.EXE Q DSSBatch.v48'):
-    
+    """
+    Create DSSBatch file using DSSAT X file
+
+    :param         ExpFilePath: DSSAT X file complete path in str
+    :param selected_treatments: Treatments selected from the X file in list
+    :param             command: DSSAT command to run dssat, defaults to 
+                                'DSCSM048.EXE Q DSSBatch.v48'
+    :return: None
+
+    """    
     splited_path = ExpFilePath.split('//')
     sep='//'
     if len(splited_path) == 1:
@@ -114,7 +150,14 @@ def create_DSSBatch(ExpFilePath: str, selected_treatments: list[str],
 
 '_______________________________ Read DATA.CDE ________________________________'
 
-def read_datacde(dssat_dir):
+def read_datacde(dssat_dir: str) -> pd.DataFrame:
+    """
+    Read DSSAT codes from Data.CDE file
+
+    :param dssat_dir: DSSAT directory in str
+    :return         : dataframe of Data.CDE
+    
+    """
     with open(dssat_dir+'//DATA.CDE', 'r') as f:
         lines = f.readlines()
         data = []
@@ -128,10 +171,9 @@ def read_datacde(dssat_dir):
     df = df.set_index('CDE')
     return df
 
-if __name__ == '__main__':
+# if __name__ == '__main__':
     # ExpFilePath = input('Full path to experiment file (*.SQX): ')
-    ExpFilePath = r'C:\Users\r.gupta\OneDrive - University of Florida\pyFunc\pyDSSAT\Testing\AIHA1302.PTX'
-    create_DSSBatch(ExpFilePath, crop='Potato', command='DSCSM047.EXE PTSUB047 B DSSBatch.v47')
+    # create_DSSBatch(ExpFilePath, crop='Potato', command='DSCSM047.EXE PTSUB047 B DSSBatch.v47')
     # print(ExpFilePath)
     # run_dssat(ExpFilePath)
     # outputFolder = r'C:\DSSAT47\Sequence\Test DSSAT_1'
