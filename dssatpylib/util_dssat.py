@@ -86,7 +86,7 @@ def run_dssat(ExpFilePath):
 
 '____________________________ Create DSSBatch File ____________________________'
 
-def create_DSSBatch(ExpFilePath: str, selected_treatments: list[str], 
+def create_DSSBatch(ExpFilePath: str, selected_treatments: Optional[list[str]]=None, 
                     command: str = 'DSCSM048.EXE Q DSSBatch.v48'):
     """
     Create DSSBatch file using DSSAT X file
@@ -122,7 +122,14 @@ def create_DSSBatch(ExpFilePath: str, selected_treatments: list[str],
                 break
             if param == 1:
                 treatments_text = line
-                if treatments_text[9:33].strip() in selected_treatments:
+                if selected_treatments is not None and \
+                treatments_text[9:33].strip() in selected_treatments:
+                    TRTNO.append(treatments_text[:2])
+                    SQ.append(treatments_text[2:4])
+                    OP.append(treatments_text[4:6])
+                    CO.append(treatments_text[6:8])
+                    TNAME.append(treatments_text[9:33])
+                else:
                     TRTNO.append(treatments_text[:2])
                     SQ.append(treatments_text[2:4])
                     OP.append(treatments_text[4:6])

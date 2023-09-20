@@ -63,7 +63,7 @@ def formatInput(input_to_format, space_available: int, decimal: int = 0) -> str:
 '________________________ function for read *.SOL file ________________________'
 
 def read_soil_profile(soilFilePath: str, soil_id: str, OnlyText: bool = False) \
-    -> list[pd.DataFrame, pd.DataFrame, list[str], str, list[str]]:
+    -> list[pd.DataFrame, pd.DataFrame, list[str], str, list[str]] | str:
     '''
     Read the soil data from *.SOL file of the DSSAT
     

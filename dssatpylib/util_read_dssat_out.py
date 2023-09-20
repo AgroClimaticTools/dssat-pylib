@@ -66,7 +66,7 @@ def get_dataChunk_indices(text: str) -> zip:
     
     '''
 
-    dataBegin_idx = [m.start()  for m in re.finditer('YEAR', text)]
+    dataBegin_idx = [m.start()  for m in re.finditer(r"\n"+re.escape('@'), text)]
     newLine_idx = [m.start()  for m in re.finditer(r"\n\n", text)]
     lastLine_idx = [m.start()  for m in re.finditer(r"\n", text)][-1]
     dataEnd_idx = []
@@ -77,6 +77,20 @@ def get_dataChunk_indices(text: str) -> zip:
                 break
     dataEnd_idx.append(lastLine_idx)
     return zip(dataBegin_idx, dataEnd_idx)
+
+'_____________ function to get data chunk indices from text file ______________'
+
+def get_treatNums(text: str) -> list[int]:
+    '''
+    Get the number of treatments available in the DSSAT *.OUT file
+
+    :param       text: text from the dssat *.OUT file in str
+    :return treatNums: Total number of treatments
+
+    '''
+    treat_idx = [m.start()  for m in re.finditer('TREATMENT', text)]
+    treatNums = [int(text[idx+9:idx+15].strip()) for idx in treat_idx]
+    return treatNums
 
 '________________________ function to read DSSAT Outputs ______________________'
 
@@ -100,17 +114,21 @@ def Read_DSSAT_Output(filePath: str):
     with open(filePath, 'r') as file:
         lines = file.read()
     
-    data = ([line.strip().split() for line in lines[beg:end].split('\n')]
+    data = ([line.strip().split() for line in lines[beg:end].split('\n') if line != '']
             for beg, end in get_dataChunk_indices(lines))
     
-    df_gen = (pd.DataFrame.from_records(data[1:], columns=data[0]) for data in data)
+    df_gen = (pd.DataFrame.from_records(data[1:], columns=data[0]) 
+              for i, data in enumerate(data))
     
+    
+    treatNums = get_treatNums(lines)
+
     if 'Plant' in filePath:
         crops = (line.strip().split(' - ')[-1] 
                  for line in lines.split('\n') if line.startswith(' MODEL'))
-        return df_gen, crops
+        return df_gen, treatNums, crops
 
-    return df_gen
+    return df_gen, treatNums
 
 
 '__________________________ function for Summary.OUT __________________________'
@@ -145,13 +163,14 @@ def extract_required_dssat_outputs(filePath: str, paramList: list[str],
 
     'Reading file using Read_DSSAT_OUTPUT func'
     if 'Plant' in filePath:
-        all_dssat_outputs, crops = Read_DSSAT_Output(filePath)
+        all_dssat_outputs, treatNums, crops = Read_DSSAT_Output(filePath)       # type: ignore
     else:
-        all_dssat_outputs = Read_DSSAT_Output(filePath)
+        all_dssat_outputs, treatNums = Read_DSSAT_Output(filePath)              # type: ignore
     
     df_list = []
-    'r = Run/Treatment'
+    'r = Runs, treatNums = list of Number of Treatments in the file'
     for r, dssat_outputs in enumerate(all_dssat_outputs):
+        dssat_outputs.rename(columns={'@YEAR':'YEAR'}, inplace=True)
         year = (int(Val) for Val in dssat_outputs['YEAR'])                      #type: ignore
         doy = (int(Val) for Val in dssat_outputs['DOY'])                        #type: ignore
         year_doy = zip(year, doy)
@@ -170,7 +189,10 @@ def extract_required_dssat_outputs(filePath: str, paramList: list[str],
             else:
                 rData[prm] = [np.nan for _ in dates]
         df = pd.DataFrame(rData)
-        df['@TRNO'] = [r+1 for _ in range(len(df))]
+        if treatNums is not None:
+            df['@TRNO'] = [treatNums[r] for _ in range(len(df))]
+        else:
+            df['@TRNO'] = [r+1 for _ in range(len(df))]
         df['DATE'] = dates
         if crop_sequence:
             df['CROP'] = [crops[r] for _ in range(len(df))]                     #type: ignore
@@ -200,9 +222,15 @@ def Summary(fileDir: str, paramList: list[str]):
                                         outputs
     
     '''
+    with open(fileDir + '//Summary.OUT', 'r') as file:
+        lines = file.read()
     
-    Summary_Data = Read_DSSAT_Output(fileDir + '//Summary.OUT')
-    df_required_dssat_outputs = Summary_Data[0]
+    data = ([line.strip().split() for line in lines[beg:end].split('\n') if line != '']
+            for beg, end in get_dataChunk_indices(lines))
+    
+    Summary_Data = (pd.DataFrame.from_records(data[1:], columns=data[0][1:]) for i, data in enumerate(data))
+
+    df_required_dssat_outputs = next(Summary_Data)
     df_required_dssat_outputs.rename(columns={'TRNO': '@TRNO'}, inplace=True)   # type: ignore
     df_required_dssat_outputs.set_index(['@TRNO'], inplace=True)                # type: ignore
     df_required_dssat_outputs = df_required_dssat_outputs.loc[:, paramList]     # type: ignore
@@ -531,8 +559,8 @@ def sep_sections_in_dict(exp_file):
             if line.startswith('*'):
                 startfilling = True
                 sec_title = line.strip().split(':')[0][1:].split('  ')[0]
-            if sec_title == 'SIMULATION':
-                each_sec = each_sec + line
+            # if sec_title == 'SIMULATION':
+            #     each_sec = each_sec + line
             else:
                 if startfilling:
                     each_sec = each_sec + line
@@ -540,14 +568,14 @@ def sep_sections_in_dict(exp_file):
                     sec_str_dict[sec_title] = each_sec
                     startfilling = False
                     each_sec = ''
-        if sec_title == 'SIMULATION':
-            sec_str_dict[sec_title] = each_sec
+        # if sec_title == 'SIMULATION':
+        #     sec_str_dict[sec_title] = each_sec
     return sec_str_dict
 
 def get_section_txt(exp_file, section_name):
     with open(exp_file, 'r') as opened_exp_file:
         fileText = opened_exp_file.read()
-    regex = "(?<="+section_name+"\n)(.*?)(?=\n\n)(?s)"
+    regex = "(?<="+section_name+")(.*?)(?=\n\n)(?s)"
     sec_text = re.search(regex, fileText)
     if sec_text != None:
         return (sec_text.group(0))
@@ -555,31 +583,36 @@ def get_section_txt(exp_file, section_name):
         return None
 
 def get_section_df(exp_file: Path, section_name: str):
-    section_str_dict = sep_sections_in_dict(exp_file)
-    section_str = section_str_dict[section_name]
-    # section_str = '\n'+get_section_txt(exp_file, section_name) + '\n\n'
-    all_section_rows = section_str.split('\n')[1:-2]
-    tables_in_section_rows = []
-    for section_row in all_section_rows:
-        if section_row.startswith('@'):
-            tables_in_section_rows.append([])
-            tables_in_section_rows[-1].append(section_row)
-        else:
-            tables_in_section_rows[-1].append(section_row)
-    df_list = []
-    header_indices_list = []
-    for table_row in tables_in_section_rows:        
-        section_header_str = table_row[0]
-        section_data_str_list = table_row[1:]
-        data_rows = []
-        header_indices = delimitate_header_indices(section_header_str)
-        for section_data_str in section_data_str_list:
-            data_rows.append([section_data_str[i:j].strip()
-                             for i, j in header_indices])
-        sec_header = section_header_str.split()
-        df = pd.DataFrame(data=data_rows, columns=sec_header)
-        df_list.append(df)
-        header_indices_list.append(header_indices)
-    return df_list, header_indices_list
+    # section_str_dict = sep_sections_in_dict(exp_file)
+    # section_str = section_str_dict[section_name]
+    section_str = get_section_txt(exp_file, section_name)
+    if section_str is not None:
+        all_section_rows = section_str.split('\n')[1:]
+        tables_in_section_rows = []
+        for section_row in all_section_rows:
+            if section_row.startswith('!'):
+                continue
+            if section_row.startswith('@') and ~section_row.startswith('@ '):
+                tables_in_section_rows.append([])
+                tables_in_section_rows[-1].append(section_row)
+            else:
+                tables_in_section_rows[-1].append(section_row)
+        df_list = []
+        header_indices_list = []
+        for table_row in tables_in_section_rows:        
+            section_header_str = table_row[0]
+            section_data_str_list = table_row[1:]
+            data_rows = []
+            header_indices = delimitate_header_indices(section_header_str)
+            for section_data_str in section_data_str_list:
+                data_rows.append([section_data_str[i:j].strip()
+                                for i, j in header_indices])
+            sec_header = section_header_str.split()
+            df = pd.DataFrame(data=data_rows, columns=sec_header)
+            df_list.append(df)
+            header_indices_list.append(header_indices)
+        return df_list, header_indices_list
+    else:
+        return None
 
 '=============================================================================='
