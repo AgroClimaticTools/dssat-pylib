@@ -176,7 +176,7 @@ def extract_required_dssat_outputs(filePath: str|Path, paramList: list[str],
         year = (str(Val) for Val in dssat_outputs['YEAR'])                      #type: ignore
         doy = (str(Val) for Val in dssat_outputs['DOY'])                        #type: ignore
         year_doy = zip(year, doy)
-        dates = [datetime.strptime(year+doy, '%y%j').date() for year, doy in year_doy]
+        dates = [datetime.strptime(year+doy, '%Y%j').date() for year, doy in year_doy]
         rData = {}
         for prm in paramList:
             if prm in dssat_outputs.columns:                                    #type: ignore
@@ -415,10 +415,10 @@ def CN_Ratio(fileDir: str|Path):
     SOMLITN_Data = Read_DSSAT_Output(fileDir / 'SOMLITN.OUT')
 
     nRuns = len(SOMLITC_Data)
-    Year = [int(Val) for i in range(nRuns) for Val in SOMLITC_Data[i]['YEAR']]  # type: ignore
-    DOY = [int(Val) for i in range(nRuns) for Val in SOMLITC_Data[i]['DOY']]    # type: ignore
+    Year = [str(Val) for i in range(nRuns) for Val in SOMLITC_Data[i]['YEAR']]  # type: ignore
+    DOY = [str(Val) for i in range(nRuns) for Val in SOMLITC_Data[i]['DOY']]    # type: ignore
     YearDOY = zip(Year, DOY)
-    DATE = [date(Year, 1, 1) + timedelta(DOY-1) for Year, DOY in YearDOY]
+    DATE = [datetime.strptime(Year+DOY, '%Y%j').date() for Year, DOY in YearDOY]
 
     SCS20D = [Val for i in range(nRuns) for Val in SOMLITC_Data[i]['SCS20D']]   # type: ignore
     SNS20D = [Val for i in range(nRuns) for Val in SOMLITN_Data[i]['SNS20D']]   # type: ignore
@@ -536,7 +536,7 @@ def read_dssat_obsdata(filePath: str|Path, paramList: list = ['ALL']):
     if not isinstance(df['DATE'][0], date):
         df['DATE'] = [datetime.strptime(val, '%y%j').date()
                       for val in df.loc[:, 'DATE'].values]
-    
+
     df.replace(-99.0, np.nan, inplace=True)
     
     try: df.rename(columns={'@TRNO':'TRNO'}, inplace=True)

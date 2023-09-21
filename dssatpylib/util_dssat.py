@@ -38,15 +38,15 @@ def date2dssatDate(anydate: date) -> str:
     """    
     return anydate.strftime("%y%j")
 
-def dssatDate2date(dssatDate: str) -> date:
+def dssatDate2date(dssatDate: str|int) -> date:
     """
     Converts a dssat date format to python date format
 
     :param dssatDate: dssat date 2-digit year format in str
     :return         : date in python date format datetime.date(yyyy, m, d)
 
-    """    
-    pythonDate = datetime.strptime(dssatDate, '%y%j').date()
+    """
+    pythonDate = datetime.strptime(str(dssatDate), '%y%j').date()
     return pythonDate
 
 
