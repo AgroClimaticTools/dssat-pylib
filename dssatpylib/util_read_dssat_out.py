@@ -94,7 +94,7 @@ def get_treatNums(text: str) -> list[int]:
 
 '________________________ function to read DSSAT Outputs ______________________'
 
-def Read_DSSAT_Output(filePath: str):
+def Read_DSSAT_Output(filePath: str|Path):
     '''
     Read several DSSAT generated output files (*.OUT) into a list of pandas 
     dataframes. Currently, the functions is tested for PlantGro, PlantN, 
@@ -111,7 +111,8 @@ def Read_DSSAT_Output(filePath: str):
                              output file of DSSAT is read.    
     
     '''
-    with open(filePath, 'r') as file:
+    filePath = Path(filePath)
+    with open(filePath, 'r', errors='replace') as file:
         lines = file.read()
     
     data = ([line.strip().split() for line in lines[beg:end].split('\n') if line != '']
@@ -123,7 +124,7 @@ def Read_DSSAT_Output(filePath: str):
     
     treatNums = get_treatNums(lines)
 
-    if 'Plant' in filePath:
+    if 'Plant' in filePath.name:
         crops = (line.strip().split(' - ')[-1] 
                  for line in lines.split('\n') if line.startswith(' MODEL'))
         return df_gen, treatNums, crops
@@ -133,7 +134,7 @@ def Read_DSSAT_Output(filePath: str):
 
 '__________________________ function for Summary.OUT __________________________'
 
-def extract_required_dssat_outputs(filePath: str, paramList: list[str],
+def extract_required_dssat_outputs(filePath: str|Path, paramList: list[str],
                                    cum_param_list: list[str],
                                    daily: bool = True, 
                                    crop_sequence: bool = False):
@@ -148,7 +149,7 @@ def extract_required_dssat_outputs(filePath: str, paramList: list[str],
     Call by: PlantGro, PlantN, SoilWat, SoilNi, ET
 
     :param        filePath: complete file path of the interested *.OUT file 
-                             listed above in str
+                            listed above in str/Path
     :param       paramList: list of output parameters needed
     :param  cum_param_list: list of output parameters with cumulative values
     :param           daily: bool, True to convert values of cumulative 
@@ -160,9 +161,10 @@ def extract_required_dssat_outputs(filePath: str, paramList: list[str],
                                         outputs
     
     '''
+    filePath = Path(filePath)
 
     'Reading file using Read_DSSAT_OUTPUT func'
-    if 'Plant' in filePath:
+    if 'Plant' in filePath.name:
         all_dssat_outputs, treatNums, crops = Read_DSSAT_Output(filePath)       # type: ignore
     else:
         all_dssat_outputs, treatNums = Read_DSSAT_Output(filePath)              # type: ignore
@@ -171,10 +173,10 @@ def extract_required_dssat_outputs(filePath: str, paramList: list[str],
     'r = Runs, treatNums = list of Number of Treatments in the file'
     for r, dssat_outputs in enumerate(all_dssat_outputs):
         dssat_outputs.rename(columns={'@YEAR':'YEAR'}, inplace=True)
-        year = (int(Val) for Val in dssat_outputs['YEAR'])                      #type: ignore
-        doy = (int(Val) for Val in dssat_outputs['DOY'])                        #type: ignore
+        year = (str(Val) for Val in dssat_outputs['YEAR'])                      #type: ignore
+        doy = (str(Val) for Val in dssat_outputs['DOY'])                        #type: ignore
         year_doy = zip(year, doy)
-        dates = [date(year, 1, 1) + timedelta(doy-1) for year, doy in year_doy]
+        dates = [datetime.strptime(year+doy, '%y%j').date() for year, doy in year_doy]
         rData = {}
         for prm in paramList:
             if prm in dssat_outputs.columns:                                    #type: ignore
@@ -208,7 +210,7 @@ def extract_required_dssat_outputs(filePath: str, paramList: list[str],
 
 '__________________________ function for Summary.OUT __________________________'
 
-def Summary(fileDir: str, paramList: list[str]):
+def Summary(fileDir: str|Path, paramList: list[str]):
 
     '''
     Extract required output parameters from Summary.OUT into a pandas dataframe 
@@ -222,13 +224,16 @@ def Summary(fileDir: str, paramList: list[str]):
                                         outputs
     
     '''
-    with open(fileDir + '//Summary.OUT', 'r') as file:
+    fileDir = Path(fileDir)
+    with open(fileDir / 'Summary.OUT', 'r', errors='replace') as file:
         lines = file.read()
     
-    data = ([line.strip().split() for line in lines[beg:end].split('\n') if line != '']
+    data = ([line.strip().split() for line in lines[beg:end].split('\n') 
+             if line != '']
             for beg, end in get_dataChunk_indices(lines))
     
-    Summary_Data = (pd.DataFrame.from_records(data[1:], columns=data[0][1:]) for i, data in enumerate(data))
+    Summary_Data = (pd.DataFrame.from_records(data[1:], columns=data[0][1:]) 
+                    for i, data in enumerate(data))
 
     df_required_dssat_outputs = next(Summary_Data)
     df_required_dssat_outputs.rename(columns={'TRNO': '@TRNO'}, inplace=True)   # type: ignore
@@ -240,7 +245,7 @@ def Summary(fileDir: str, paramList: list[str]):
 
 '_________________________ function for PlantGro.OUT __________________________'
 
-def PlantGro(fileDir: str, paramList: list[str], 
+def PlantGro(fileDir: str|Path, paramList: list[str], 
              daily: bool = True, crop_sequence: bool = False):
     '''
     Extract required output parameters from PlantGro.OUT into a pandas dataframe
@@ -256,8 +261,8 @@ def PlantGro(fileDir: str, paramList: list[str],
     :return   df_outputs: Pandas dataframes of required DSSAT outputs
     
     '''
-
-    filePath = fileDir + '//PlantGro.OUT'
+    fileDir = Path(fileDir)
+    filePath = fileDir / 'PlantGro.OUT'
     cum_param_list = ['SNW0C', 'SNW1C']
     df_outputs = extract_required_dssat_outputs(filePath, paramList, 
                                                 cum_param_list, daily, 
@@ -267,7 +272,7 @@ def PlantGro(fileDir: str, paramList: list[str],
 
 '__________________________ function for PlantN.OUT ___________________________'
 
-def PlantN(fileDir: str, paramList: list[str],
+def PlantN(fileDir: str|Path, paramList: list[str],
            daily: bool = True, crop_sequence: bool = False):
     '''
     Extract required output parameters from PlantN.OUT into a pandas dataframe
@@ -283,8 +288,8 @@ def PlantN(fileDir: str, paramList: list[str],
     :return   df_outputs: Pandas dataframes of required DSSAT outputs
     
     '''
-
-    filePath = fileDir + '//PlantN.OUT'
+    fileDir = Path(fileDir)
+    filePath = fileDir / 'PlantN.OUT'
     cum_param_list = ['NUPC', 'SNN0C', 'SNN1C']
     df_outputs = extract_required_dssat_outputs(filePath, paramList,
                                                 cum_param_list, daily,
@@ -294,7 +299,7 @@ def PlantN(fileDir: str, paramList: list[str],
 
 '__________________________ function for SoilNi.OUT ___________________________'
 
-def SoilNi(fileDir: str, paramList: list[str], daily=True):
+def SoilNi(fileDir: str|Path, paramList: list[str], daily=True):
     '''
     Extract required output parameters from SoilNi.OUT into a pandas dataframe
 
@@ -310,7 +315,8 @@ def SoilNi(fileDir: str, paramList: list[str], daily=True):
     
     '''
 
-    filePath = fileDir + '//SoilNi.OUT'
+    fileDir = Path(fileDir)
+    filePath = fileDir / 'SoilNi.OUT'
     cum_param_list = ['NAPC', 'NMNC', 'NITC', 'NDNC', 'NIMC',
                       'AMLC', 'NNMNC', 'NUCM', 'NLCC', 'TDFC']
     df_outputs = extract_required_dssat_outputs(filePath, paramList, 
@@ -321,7 +327,7 @@ def SoilNi(fileDir: str, paramList: list[str], daily=True):
 
 '__________________________ function for SoilWat.OUT __________________________'
 
-def SoilWat(fileDir: str, paramList: list[str], daily: bool = True):
+def SoilWat(fileDir: str|Path, paramList: list[str], daily: bool = True):
     '''
     Extract required output parameters from SoilWat.OUT into a pandas dataframe
 
@@ -336,7 +342,8 @@ def SoilWat(fileDir: str, paramList: list[str], daily: bool = True):
     
     '''
 
-    filePath = Path(fileDir) / 'SoilWat.OUT'
+    fileDir = Path(fileDir)
+    filePath = fileDir / 'SoilWat.OUT'
     cum_param_list = ['ROFC', 'DRNC', 'PREC', 'IR#C', 'IRRC', 'TDFC']
     df_outputs = extract_required_dssat_outputs(str(filePath), paramList, 
                                                 cum_param_list, daily, 
@@ -346,7 +353,7 @@ def SoilWat(fileDir: str, paramList: list[str], daily: bool = True):
 
 '____________________________ function for ET.OUT _____________________________'
 
-def ET(fileDir: str, paramList: list[str],
+def ET(fileDir: str|Path, paramList: list[str],
        daily: bool = True):
     '''
     Extract required output parameters from ET.OUT into a pandas dataframe
@@ -362,7 +369,8 @@ def ET(fileDir: str, paramList: list[str],
     
     '''
 
-    filePath = fileDir + '//ET.OUT'
+    fileDir = Path(fileDir)
+    filePath = fileDir / 'ET.OUT'
     cum_param_list = ['ETAC','EPAC','ESAC','EFAC','EMAC']
     df_outputs = extract_required_dssat_outputs(filePath, paramList, 
                                                 cum_param_list, daily, 
@@ -372,7 +380,7 @@ def ET(fileDir: str, paramList: list[str],
 
 '__________________________ function for Weather.OUT __________________________'
 
-def Weather(fileDir: str, paramList: list[str]):
+def Weather(fileDir: str|Path, paramList: list[str]):
     '''
     Extract required output parameters from Weather.OUT into a pandas dataframe
 
@@ -385,7 +393,8 @@ def Weather(fileDir: str, paramList: list[str]):
     
     '''
 
-    filePath = fileDir + '//Weather.OUT'
+    fileDir = Path(fileDir)
+    filePath = fileDir / 'Weather.OUT'
     df_outputs = extract_required_dssat_outputs(filePath, paramList, 
                                                 cum_param_list=[''], daily=False, 
                                                 crop_sequence = False)
@@ -394,15 +403,17 @@ def Weather(fileDir: str, paramList: list[str]):
 
 '_______ function to calculate Soil C:N from SOMLITC.OUT & SOMLITN.OUT ________'
 
-def CN_Ratio(fileDir: str):
-    SOMLITC_Data = Read_DSSAT_Output(fileDir + '//SOMLITC.OUT')
-    SOMLITN_Data = Read_DSSAT_Output(fileDir + '//SOMLITN.OUT')
+def CN_Ratio(fileDir: str|Path):
     '''
     Extracting following variables from SOMLITC_Data & SOMLITN_Data:
     SCS20D    Organic C (SOM) in top 20 cm (kg/ha)
     SNS20D    Organic N (SOM) in top 20 cm (kg/ha)
 
     '''
+    fileDir = Path(fileDir)
+    SOMLITC_Data = Read_DSSAT_Output(fileDir / 'SOMLITC.OUT')
+    SOMLITN_Data = Read_DSSAT_Output(fileDir / 'SOMLITN.OUT')
+
     nRuns = len(SOMLITC_Data)
     Year = [int(Val) for i in range(nRuns) for Val in SOMLITC_Data[i]['YEAR']]  # type: ignore
     DOY = [int(Val) for i in range(nRuns) for Val in SOMLITC_Data[i]['DOY']]    # type: ignore
@@ -427,7 +438,7 @@ def CN_Ratio(fileDir: str):
 
 '_______________________ function for SoilWatBal.OUT __________________________'
 
-def SoilWatBal(fileDir: str, RunStart: int=1, RunEnd = 'last'):
+def SoilWatBal(fileDir: str|Path, RunStart: int=1, RunEnd = 'last'):
     """
     Extract the soil water balance from SoilWatBal.OUT file
 
@@ -437,14 +448,15 @@ def SoilWatBal(fileDir: str, RunStart: int=1, RunEnd = 'last'):
     :return         df: Pandas dataframes of required DSSAT outputs
 
     """    
-    File = fileDir + '//SoilWatBal.OUT'        
+    fileDir = Path(fileDir)
+    filePath = fileDir / 'SoilWatBal.OUT'        
     WatBalData = {'Run'               : [], 'Treatment Name'    : [],
                   'Planting Dates'    : [], 'Harvesting Dates'  : [],
                   'Soil Water (Start)': [], 'Soil Water (Final)': [],
                   'Precipitation'     : [], 'Drainage'          : [],
                   'Tiledrain flow'    : [], 'Runoff'            : [],
                   'Evapotranspiration': []}
-    with open(File) as Fswb:
+    with open(filePath, 'r', errors='replace') as Fswb:
         param = 0
         for line in Fswb:    
             if line.startswith('*RUN'):
@@ -498,7 +510,7 @@ def SoilWatBal(fileDir: str, RunStart: int=1, RunEnd = 'last'):
 
 '__________________________ function to read *.PTT ____________________________'
 
-def read_dssat_obsdata(filePath: str, paramList: list = ['ALL']):
+def read_dssat_obsdata(filePath: str|Path, paramList: list = ['ALL']):
     '''
     Read DSSAT experiment observation file
     Initially build to read Potato- *.PTT file but could be used for other crops
@@ -511,7 +523,8 @@ def read_dssat_obsdata(filePath: str, paramList: list = ['ALL']):
     :return df: Pandas dataframes of required DSSAT outputs
     
     '''
-    if filePath.endswith('.csv'):
+    filePath = Path(filePath)
+    if filePath.suffix == '.csv':
         try: 
             df = pd.read_csv(filePath, parse_dates=['DATE'])
             df['DATE'] = [val.to_pydatetime().date()
@@ -521,10 +534,9 @@ def read_dssat_obsdata(filePath: str, paramList: list = ['ALL']):
         df = pd.read_fwf(filePath, colspecs='infer', infer_nrows=100,
                          skiprows=5)
     if not isinstance(df['DATE'][0], date):
-        df['DATE'] = [date(2000+int(str(val)[:2]), 1, 1) + \
-                       timedelta(int(str(val)[-3:])-1)
-                       for val in df.loc[:, 'DATE'].values]
-
+        df['DATE'] = [datetime.strptime(val, '%y%j').date()
+                      for val in df.loc[:, 'DATE'].values]
+    
     df.replace(-99.0, np.nan, inplace=True)
     
     try: df.rename(columns={'@TRNO':'TRNO'}, inplace=True)
@@ -548,7 +560,7 @@ def delimitate_header_indices(section_header_str):
     return list(zip(start_indices, end_indices))
 
 def sep_sections_in_dict(exp_file):
-    with open(exp_file, 'r') as opened_exp_file:
+    with open(exp_file, 'r', errors='replace') as opened_exp_file:
         sec_str_dict = {}
         startfilling = False
         each_sec = ''
@@ -573,7 +585,7 @@ def sep_sections_in_dict(exp_file):
     return sec_str_dict
 
 def get_section_txt(exp_file, section_name):
-    with open(exp_file, 'r') as opened_exp_file:
+    with open(exp_file, 'r', errors='replace') as opened_exp_file:
         fileText = opened_exp_file.read()
     regex = "(?<="+section_name+")(.*?)(?=\n\n)(?s)"
     sec_text = re.search(regex, fileText)

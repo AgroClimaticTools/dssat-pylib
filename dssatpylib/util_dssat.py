@@ -9,15 +9,16 @@ Description: To run DSSAT and update DSSBatch.v47 based on exp. file
 
 '=============================================================================='
 
-import os
+import subprocess
 import pandas as pd
-from datetime import date, timedelta
+from datetime import date, datetime
 from typing import Optional
+from pathlib import Path
 
 
 '========================= DSSAT Formatting Functions ========================='
 
-def julianDay(anydate: date):
+def julianDay(anydate: date) -> str:
     """
     Calculates julian days from any date in python date format
 
@@ -25,19 +26,19 @@ def julianDay(anydate: date):
     :return       : Julian day for the given date
 
     """    
-    return str((anydate - date(int(anydate.year), 1, 1)).days + 1)
+    return anydate.strftime("%j")
 
-def date2dssatDate(anydate: date): 
+def date2dssatDate(anydate: date) -> str: 
     """
-    Converts a date to dssat date format
+    Converts a python date to dssat date format
 
     :param anydate: date in python date format datetime.date(yyyy, m, d)
     :return       : dssat date 2-digit year format in str
 
     """    
-    return str(int(anydate.year))[-2:] + julianDay(anydate).zfill(3)
+    return anydate.strftime("%y%j")
 
-def dssatDate2date(dssatDate):
+def dssatDate2date(dssatDate: str) -> date:
     """
     Converts a dssat date format to python date format
 
@@ -45,70 +46,63 @@ def dssatDate2date(dssatDate):
     :return         : date in python date format datetime.date(yyyy, m, d)
 
     """    
-    dssatDate = str(int(dssatDate))
-    yy = dssatDate[:2]
-    julianDay = int(dssatDate[2:])
-    if int(yy) >= 86:
-        year = int('19'+yy)
-        return date(year, 1, 1)+timedelta(julianDay-1)
-    else:
-        year = int('20'+yy)
-        return date(year, 1, 1)+timedelta(julianDay-1)
+    pythonDate = datetime.strptime(dssatDate, '%y%j').date()
+    return pythonDate
 
 
 '========================== DSSAT Utility Functions ==========================='
 
 '_________________________________ Run DSSAT __________________________________'
 
-def run_dssat(ExpFilePath):
+def run_dssat(ExpFilePath: str|Path, DSSAT_dir: str|Path, 
+              selected_treatments: Optional[list[str]]=None, 
+              command: str = 'DSCSM048.EXE Q DSSBatch.v48'):
     """
     Run the DSSAT model
 
-    :param ExpFilePath: DSSAT X file complete path in str
+    :param ExpFilePath: DSSAT X file complete path in str or Path
+    :param   DSSAT_dir: DSSAT directory in str or Path
 
-    """    
-    splited_path = ExpFilePath.split('//')
-    sep = '//'
-    if len(splited_path) == 1:
-        splited_path = ExpFilePath.split('\\')
-        sep = '\\'
-    try:
-        directory = sep.join(splited_path[:-1])
-        os.chdir(directory)
-        os.system('/projects/aces/rishabh7/Data/DSSAT47/dscsm047 Q DSSBatch.v47')
-    except:
-        DSSATFolder = sep.join(splited_path[:2])
-        directory = sep.join(splited_path[:-1])
-        v = DSSATFolder[-2:]
-        os.chdir(directory)
-        os.system(DSSATFolder + "\DSCSM0" + v+ '.EXE Q DSSBatch.v'+ v)          # type: ignore
+    """
+    ExpFilePath = Path(ExpFilePath)
+    DSSAT_dir = Path(DSSAT_dir)
+    directory = ExpFilePath.parent
+    v = DSSAT_dir.name[-2:]
+    
+    # Create DSSAT Batch File
+    create_DSSBatch(ExpFilePath, selected_treatments, command)
+
+    # Run model
+    dssat_running = subprocess.Popen(command, shell=False,
+                                     stdout=subprocess.PIPE, 
+                                     stderr=subprocess.PIPE, 
+                                     cwd=ExpFilePath)
+    
+    stdout, stderr = dssat_running.communicate()
+    # os.chdir(directory)
+    # os.system(str(DSSAT_dir) + "\DSCSM0" + v+ '.EXE Q DSSBatch.v'+ v)           # type: ignore
+    return None
 
 
 '____________________________ Create DSSBatch File ____________________________'
 
-def create_DSSBatch(ExpFilePath: str, selected_treatments: Optional[list[str]]=None, 
+def create_DSSBatch(ExpFilePath: str|Path, selected_treatments: Optional[list[str]]=None, 
                     command: str = 'DSCSM048.EXE Q DSSBatch.v48'):
     """
     Create DSSBatch file using DSSAT X file
 
-    :param         ExpFilePath: DSSAT X file complete path in str
+    :param         ExpFilePath: DSSAT X file complete path in str or Path
     :param selected_treatments: Treatments selected from the X file in list
     :param             command: DSSAT command to run dssat, defaults to 
                                 'DSCSM048.EXE Q DSSBatch.v48'
     :return: None
 
-    """    
-    splited_path = ExpFilePath.split('//')
-    sep='//'
-    if len(splited_path) == 1:
-        splited_path = ExpFilePath.split('\\')
-        sep='\\'
-    
-    ExpDir = sep.join(splited_path[:-1])
-    ExpFile = splited_path[-1]
-    cmd_line = ExpDir + sep + command
+    """
+    ExpFilePath = Path(ExpFilePath)
+    ExpDir = ExpFilePath.parent
+    ExpFile = ExpFilePath.name
     v = command.split('.EXE')[0][-2:]
-    DSSBatchFile = sep.join(splited_path[:-1] + ['DSSBatch.v'+v])
+    DSSBatchFile = ExpDir / ('DSSBatch.v'+v)
     
     treatments_text = ''
     TRTNO, SQ, OP, CO, TNAME = [], [], [], [], []
@@ -137,7 +131,6 @@ def create_DSSBatch(ExpFilePath: str, selected_treatments: Optional[list[str]]=N
                     TNAME.append(treatments_text[9:33])
     treatment_df = pd.DataFrame({'TRTNO' : TRTNO, 'SQ' : SQ,
                                  'OP': OP, 'CO': CO})
-    directory = ExpDir
     batch_text = '$BATCH(%s)' % ('Sequence'.upper()) + '\n' + '!' + '\n'
     batch_text = batch_text + '@FILEX                                                                                        TRTNO     RP     SQ     OP     CO\n'
     
@@ -157,15 +150,16 @@ def create_DSSBatch(ExpFilePath: str, selected_treatments: Optional[list[str]]=N
 
 '_______________________________ Read DATA.CDE ________________________________'
 
-def read_datacde(dssat_dir: str) -> pd.DataFrame:
+def read_datacde(dssat_dir: str|Path) -> pd.DataFrame:
     """
     Read DSSAT codes from Data.CDE file
 
-    :param dssat_dir: DSSAT directory in str
+    :param dssat_dir: DSSAT directory in str or Path
     :return         : dataframe of Data.CDE
     
     """
-    with open(dssat_dir+'//DATA.CDE', 'r') as f:
+    dssat_dir = Path(dssat_dir)
+    with open(dssat_dir / 'DATA.CDE', 'r', errors='replace') as f:
         lines = f.readlines()
         data = []
         for line in lines:
