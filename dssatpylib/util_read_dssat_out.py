@@ -14,7 +14,7 @@ import pandas as pd
 # import polars as pl
 
 from pathlib import Path
-from datetime import date, datetime, timedelta
+from datetime import date, datetime
 from typing import Union
 
 '____________________________ function to check float__________________________'
@@ -118,7 +118,7 @@ def Read_DSSAT_Output(filePath: str|Path):
     data = ([line.strip().split() for line in lines[beg:end].split('\n') if line != '']
             for beg, end in get_dataChunk_indices(lines))
     
-    df_gen = (pd.DataFrame.from_records(data[1:], columns=data[0]) 
+    df_gen = (pd.DataFrame.from_records(data[1:], columns=data[0]).astype(np.float32) 
               for i, data in enumerate(data))
     
     
@@ -172,11 +172,9 @@ def extract_required_dssat_outputs(filePath: str|Path, paramList: list[str],
     df_list = []
     'r = Runs, treatNums = list of Number of Treatments in the file'
     for r, dssat_outputs in enumerate(all_dssat_outputs):
-        dssat_outputs.rename(columns={'@YEAR':'YEAR'}, inplace=True)
-        year = (str(Val) for Val in dssat_outputs['YEAR'])                      #type: ignore
-        doy = (str(Val) for Val in dssat_outputs['DOY'])                        #type: ignore
-        year_doy = zip(year, doy)
-        dates = [datetime.strptime(year+doy, '%Y%j').date() for year, doy in year_doy]
+        dates = [datetime.strptime(str(int(year))+str(int(doy)), '%Y%j').date() 
+                 for year, doy in zip(dssat_outputs['@YEAR'], dssat_outputs['DOY'])]
+        
         rData = {}
         for prm in paramList:
             if prm in dssat_outputs.columns:                                    #type: ignore
@@ -192,12 +190,12 @@ def extract_required_dssat_outputs(filePath: str|Path, paramList: list[str],
                 rData[prm] = [np.nan for _ in dates]
         df = pd.DataFrame(rData)
         if treatNums is not None:
-            df['@TRNO'] = [treatNums[r] for _ in range(len(df))]
+            df.loc[:,'@TRNO'] = [treatNums[r] for _ in range(len(df))]
         else:
-            df['@TRNO'] = [r+1 for _ in range(len(df))]
-        df['DATE'] = dates
+            df.loc[:,'@TRNO'] = [r+1 for _ in range(len(df))]
+        df.loc[:,'DATE'] = dates
         if crop_sequence:
-            df['CROP'] = [crops[r] for _ in range(len(df))]                     #type: ignore
+            df.loc[:,'CROP'] = [crops[r] for _ in range(len(df))]                     #type: ignore
             df.set_index(['@TRNO', 'CROP', 'DATE'], inplace=True)
         else:
             df.set_index(['@TRNO', 'DATE'], inplace=True)
