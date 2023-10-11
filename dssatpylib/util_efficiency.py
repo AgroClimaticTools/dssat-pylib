@@ -74,6 +74,18 @@ def R2(observed, simulated):
     '''
     return r2_score(observed, simulated)
 
+def r(observed, simulated):
+    '''
+    Calculates the Coefficient of Determination (R2) value between observed and 
+    simulated data
+    
+    :param  observed: numpy array or list of observed data
+    :param simulated: numpy array or list of simulated data
+    
+    :return float: R2 between observed and simulated data
+    '''
+    return stats.pearsonr(observed, simulated)
+
 def dStat(observed, simulated):
     '''
     Performs Willmott (1981) Index of Agreement
