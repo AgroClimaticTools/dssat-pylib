@@ -63,7 +63,7 @@ def formatInput(input_to_format, space_available: int, decimal: int = 0) -> str:
 '________________________ function for read *.SOL file ________________________'
 
 def read_soil_profile(soilFilePath: str, soil_id: str, OnlyText: bool = False) \
-    -> list[pd.DataFrame, pd.DataFrame, list[str], str, list[str]] | str:
+    -> Union[pd.DataFrame, pd.DataFrame, list[str], str, list[str]] | str:
     '''
     Read the soil data from *.SOL file of the DSSAT
     
@@ -84,45 +84,52 @@ def read_soil_profile(soilFilePath: str, soil_id: str, OnlyText: bool = False) \
     :return      headertext_list: list of the text up to header of the second
                                   table and text of third table header
     '''
-    Data = []
+    section = []
     soil_text = ''
     soil_lines = []
+    headers = []
     with open(soilFilePath) as Fsoil:
         param = 0
         for line in Fsoil:
-            if line.startswith('!'):
-                continue
             if line.startswith('*'+soil_id):
                 param = 1
                 soil_text = soil_text + line
                 soil_lines.append(line)
                 continue
-            if line == '\n':
-                param = 0
             if param == 1:
-                Data.append(line.strip())
+                if line.startswith('*'):
+                    param = 0
+                    continue
+                elif line == '\n' or line.startswith('!') or line.strip() == '':
+                    soil_text = soil_text + line
+                    continue
+                elif line.startswith('@'):
+                    section.append([])
+                    headers.append(line)
+                section[-1].append(line.strip())
                 soil_text = soil_text + line
                 soil_lines.append(line)
+    
     if OnlyText:
         return soil_text
-    Header1 = Data[2][2:].split()
-    # print(Header1)
-    Data1 = [float(val) if isfloat(val) else val for val in Data[3].split()]
-    # print(Data1)
-    Header2 = Data[4][2:].split()
-    # print(Header2)
-    Data2 = [[float(val) if isfloat(val) else val for val in line.split()] 
-             for line in Data[5:]]
-    # print(Data2)
+    table_header = section[1][0][2:].split()
+    table_data = [[float(val) if isfloat(val) else val for val in line.split()] 
+                    for line in section[1][1:]]
+    soil_info_df = pd.DataFrame(table_data, columns=table_header)
 
-    soil_info_df = pd.DataFrame([Data1], columns=Header1)
-    soil_layered_info_df = pd.DataFrame(Data2, columns=Header2)
-
-    headertext_list = [''.join(soil_lines[:4]),soil_lines[5]]
-    # print(headertext_list)
+    soil_layered_info_df_list = []
+    for Data in section[2:]:
+        table_header = Data[0][2:].split()
+        table_data = [[float(val) if isfloat(val) else val for val in line.split()]
+                    for line in Data[1:]]
+        df = pd.DataFrame(table_data, columns=table_header)
+        df.set_index('SLB', inplace=True)
+        soil_layered_info_df_list.append(df)
+    soil_layered_info_df = pd.concat(soil_layered_info_df_list, axis=1).reset_index()
+    headertext_list = [''.join(soil_lines[:4])]+headers[2:]
     
-    return [soil_info_df, soil_layered_info_df, 
-            soil_lines, soil_text, headertext_list]                             # type: ignore
+    return soil_info_df, soil_layered_info_df, soil_lines, \
+        soil_text, headertext_list                                              # type: ignore
 
 
 '______________________ function for generate *.SOL file ______________________'
@@ -143,40 +150,106 @@ def create_soil_profile(soil_layered_info_df, soil_info_df, headertext_list):
     '''
     text = headertext_list[0]
 
-    SCOM = formatInput(soil_info_df.loc[0,'SCOM'],6, decimal=0)
-    SALB = formatInput(soil_info_df.loc[0,'SALB'],6, decimal=2)
-    SLU1 = formatInput(soil_info_df.loc[0,'SLU1'],6, decimal=1)
-    SLDR = formatInput(soil_info_df.loc[0,'SLDR'],6, decimal=2)
-    SLRO = formatInput(soil_info_df.loc[0,'SLRO'],6, decimal=1)
-    SLNF = formatInput(soil_info_df.loc[0,'SLNF'],6, decimal=2)
-    SLPF = formatInput(soil_info_df.loc[0,'SLPF'],6, decimal=2)
-    SMHB = formatInput(soil_info_df.loc[0,'SMHB'],6)
-    SMPX = formatInput(soil_info_df.loc[0,'SMPX'],6)
-    SMKE = formatInput(soil_info_df.loc[0,'SMKE'],6)
+    SCOM = formatInput(soil_info_df.loc[0,'SCOM'], 6, decimal=0)
+    SALB = formatInput(soil_info_df.loc[0,'SALB'], 6, decimal=2)
+    SLU1 = formatInput(soil_info_df.loc[0,'SLU1'], 6, decimal=1)
+    SLDR = formatInput(soil_info_df.loc[0,'SLDR'], 6, decimal=2)
+    SLRO = formatInput(soil_info_df.loc[0,'SLRO'], 6, decimal=1)
+    SLNF = formatInput(soil_info_df.loc[0,'SLNF'], 6, decimal=2)
+    SLPF = formatInput(soil_info_df.loc[0,'SLPF'], 6, decimal=2)
+    SMHB = formatInput(soil_info_df.loc[0,'SMHB'], 6)
+    SMPX = formatInput(soil_info_df.loc[0,'SMPX'], 6)
+    SMKE = formatInput(soil_info_df.loc[0,'SMKE'], 6)
     text = text + ''.join([SCOM, SALB, SLU1, SLDR, SLRO, SLNF, SLPF, SMHB, SMPX,
                            SMKE])+'\n'
-    text = text + headertext_list[-1]
+    text = text + headertext_list[1]
     for row in range(soil_layered_info_df.shape[0]):
-        SLB  = formatInput(soil_layered_info_df.loc[row,'SLB'], 6)
-        SLMH = formatInput(soil_layered_info_df.loc[row,'SLMH'],6)
-        SLLL = formatInput(soil_layered_info_df.loc[row,'SLLL'],6, decimal=3)
-        SDUL = formatInput(soil_layered_info_df.loc[row,'SDUL'],6, decimal=3)
-        SSAT = formatInput(soil_layered_info_df.loc[row,'SSAT'],6, decimal=3)
-        SRGF = formatInput(soil_layered_info_df.loc[row,'SRGF'],6, decimal=3)
-        SSKS = formatInput(soil_layered_info_df.loc[row,'SSKS'],6, decimal=2)
-        SBDM = formatInput(soil_layered_info_df.loc[row,'SBDM'],6, decimal=2)
-        SLOC = formatInput(soil_layered_info_df.loc[row,'SLOC'],6, decimal=2)
-        SLCL = formatInput(soil_layered_info_df.loc[row,'SLCL'],6, decimal=1)
-        SLSI = formatInput(soil_layered_info_df.loc[row,'SLSI'],6, decimal=1)
-        SLCF = formatInput(soil_layered_info_df.loc[row,'SLCF'],6, decimal=1)
-        SLNI = formatInput(soil_layered_info_df.loc[row,'SLNI'],6, decimal=3)
-        SLHW = formatInput(soil_layered_info_df.loc[row,'SLHW'],6, decimal=1)
-        SLHB = formatInput(soil_layered_info_df.loc[row,'SLHB'],6, decimal=1)
-        SCEC = formatInput(soil_layered_info_df.loc[row,'SCEC'],6, decimal=1)
-        SADC = formatInput(soil_layered_info_df.loc[row,'SADC'],6, decimal=2)
+        SLB  = formatInput(soil_layered_info_df.loc[row, 'SLB'], 6)
+        SLMH = formatInput(soil_layered_info_df.loc[row,'SLMH'], 5)
+        SLLL = formatInput(soil_layered_info_df.loc[row,'SLLL'], 7, decimal=3)
+        SDUL = formatInput(soil_layered_info_df.loc[row,'SDUL'], 6, decimal=3)
+        SSAT = formatInput(soil_layered_info_df.loc[row,'SSAT'], 6, decimal=3)
+        SRGF = formatInput(soil_layered_info_df.loc[row,'SRGF'], 6, decimal=3)
+        SSKS = formatInput(soil_layered_info_df.loc[row,'SSKS'], 6, decimal=2)
+        SBDM = formatInput(soil_layered_info_df.loc[row,'SBDM'], 6, decimal=2)
+        SLOC = formatInput(soil_layered_info_df.loc[row,'SLOC'], 6, decimal=2)
+        SLCL = formatInput(soil_layered_info_df.loc[row,'SLCL'], 6, decimal=1)
+        SLSI = formatInput(soil_layered_info_df.loc[row,'SLSI'], 6, decimal=1)
+        SLCF = formatInput(soil_layered_info_df.loc[row,'SLCF'], 6, decimal=1)
+        SLNI = formatInput(soil_layered_info_df.loc[row,'SLNI'], 6, decimal=3)
+        SLHW = formatInput(soil_layered_info_df.loc[row,'SLHW'], 6, decimal=1)
+        SLHB = formatInput(soil_layered_info_df.loc[row,'SLHB'], 6, decimal=1)
+        SCEC = formatInput(soil_layered_info_df.loc[row,'SCEC'], 6, decimal=1)
+        SADC = formatInput(soil_layered_info_df.loc[row,'SADC'], 6, decimal=2)
         text = text + ''.join([SLB,  SLMH, SLLL, SDUL, SSAT, SRGF, SSKS, SBDM, 
                                SLOC, SLCL, SLSI, SLCF, SLNI, SLHW, SLHB, SCEC,
                                SADC])+'\n'
+    if 'SLPX' in soil_layered_info_df.columns and 'ALFVG' in soil_layered_info_df.columns:
+        text = text + headertext_list[2]
+        for row in range(soil_layered_info_df.shape[0]):
+            SLB   = formatInput(soil_layered_info_df.loc[row,  'SLB'], 6)
+            SLPX  = formatInput(soil_layered_info_df.loc[row, 'SLPX'], 6, decimal=1)
+            SLPT  = formatInput(soil_layered_info_df.loc[row, 'SLPT'], 6)
+            SLPO  = formatInput(soil_layered_info_df.loc[row, 'SLPO'], 6, decimal=3)
+            CACO3 = formatInput(soil_layered_info_df.loc[row,'CACO3'], 6, decimal=3)
+            SLAL  = formatInput(soil_layered_info_df.loc[row, 'SLAL'], 6, decimal=3)
+            SLFE  = formatInput(soil_layered_info_df.loc[row, 'SLFE'], 6, decimal=3)
+            SLMN  = formatInput(soil_layered_info_df.loc[row, 'SLMN'], 6, decimal=3)
+            SLBS  = formatInput(soil_layered_info_df.loc[row, 'SLBS'], 6, decimal=3)
+            SLPA  = formatInput(soil_layered_info_df.loc[row, 'SLPA'], 6, decimal=3)
+            SLPB  = formatInput(soil_layered_info_df.loc[row, 'SLPB'], 6, decimal=3)
+            SLKE  = formatInput(soil_layered_info_df.loc[row, 'SLKE'], 6, decimal=3)
+            SLMG  = formatInput(soil_layered_info_df.loc[row, 'SLMG'], 6, decimal=3)
+            SLNA  = formatInput(soil_layered_info_df.loc[row, 'SLNA'], 6, decimal=3)
+            SLSU  = formatInput(soil_layered_info_df.loc[row, 'SLSU'], 6, decimal=3)
+            SLEC  = formatInput(soil_layered_info_df.loc[row, 'SLEC'], 6, decimal=3)
+            SLCA  = formatInput(soil_layered_info_df.loc[row, 'SLCA'], 6, decimal=3)
+            text = text + ''.join([SLB,  SLPX, SLPT, SLPO, CACO3, SLAL, SLFE, SLMN, 
+                                SLBS, SLPA, SLPB, SLKE, SLMG, SLNA, SLSU, SLEC,
+                                SLCA])+'\n'
+        
+        text = text + headertext_list[3]
+        for row in range(soil_layered_info_df.shape[0]):
+            SLB   = formatInput(soil_layered_info_df.loc[row,  'SLB'], 6)
+            ALFVG = formatInput(soil_layered_info_df.loc[row,'ALFVG'], 6, decimal=3)
+            # MVG   = formatInput(soil_layered_info_df.loc[row,  'MVG'], 6, decimal=3)
+            NVG   = formatInput(soil_layered_info_df.loc[row,  'NVG'], 6, decimal=3)
+            MVG   = formatInput(1-(1/float(NVG)), 6, decimal=3)
+            WCRES = formatInput(soil_layered_info_df.loc[row,'WCRES'], 6, decimal=3)
+            text = text + ''.join([SLB,  ALFVG, MVG, NVG, WCRES])+'\n'
+    elif 'SLPX' in soil_layered_info_df.columns:
+        text = text + headertext_list[2]
+        for row in range(soil_layered_info_df.shape[0]):
+            SLB   = formatInput(soil_layered_info_df.loc[row,  'SLB'], 6)
+            SLPX  = formatInput(soil_layered_info_df.loc[row, 'SLPX'], 6, decimal=1)
+            SLPT  = formatInput(soil_layered_info_df.loc[row, 'SLPT'], 6)
+            SLPO  = formatInput(soil_layered_info_df.loc[row, 'SLPO'], 6, decimal=3)
+            CACO3 = formatInput(soil_layered_info_df.loc[row,'CACO3'], 6, decimal=3)
+            SLAL  = formatInput(soil_layered_info_df.loc[row, 'SLAL'], 6, decimal=3)
+            SLFE  = formatInput(soil_layered_info_df.loc[row, 'SLFE'], 6, decimal=3)
+            SLMN  = formatInput(soil_layered_info_df.loc[row, 'SLMN'], 6, decimal=3)
+            SLBS  = formatInput(soil_layered_info_df.loc[row, 'SLBS'], 6, decimal=3)
+            SLPA  = formatInput(soil_layered_info_df.loc[row, 'SLPA'], 6, decimal=3)
+            SLPB  = formatInput(soil_layered_info_df.loc[row, 'SLPB'], 6, decimal=3)
+            SLKE  = formatInput(soil_layered_info_df.loc[row, 'SLKE'], 6, decimal=3)
+            SLMG  = formatInput(soil_layered_info_df.loc[row, 'SLMG'], 6, decimal=3)
+            SLNA  = formatInput(soil_layered_info_df.loc[row, 'SLNA'], 6, decimal=3)
+            SLSU  = formatInput(soil_layered_info_df.loc[row, 'SLSU'], 6, decimal=3)
+            SLEC  = formatInput(soil_layered_info_df.loc[row, 'SLEC'], 6, decimal=3)
+            SLCA  = formatInput(soil_layered_info_df.loc[row, 'SLCA'], 6, decimal=3)
+            text = text + ''.join([SLB,  SLPX, SLPT, SLPO, CACO3, SLAL, SLFE, SLMN, 
+                                SLBS, SLPA, SLPB, SLKE, SLMG, SLNA, SLSU, SLEC,
+                                SLCA])+'\n'
+    elif 'ALFVG' in soil_layered_info_df.columns:
+        text = text + headertext_list[2]
+        for row in range(soil_layered_info_df.shape[0]):
+            SLB   = formatInput(soil_layered_info_df.loc[row,  'SLB'], 6)
+            ALFVG = formatInput(soil_layered_info_df.loc[row,'ALFVG'], 6, decimal=3)
+            # MVG   = formatInput(soil_layered_info_df.loc[row,  'MVG'], 6, decimal=3)
+            NVG   = formatInput(soil_layered_info_df.loc[row,  'NVG'], 6, decimal=3)
+            MVG   = formatInput(1-(1/float(NVG)), 6, decimal=3)
+            WCRES = formatInput(soil_layered_info_df.loc[row,'WCRES'], 6, decimal=3)
+            text = text + ''.join([SLB,  ALFVG, MVG, NVG, WCRES])+'\n'
     return text
 
 
