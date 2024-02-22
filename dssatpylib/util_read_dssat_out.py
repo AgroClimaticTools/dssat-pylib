@@ -9,13 +9,16 @@ Description: Utility functions to extract the DSSAT outputs from DSSAT generated
 '=============================================================================='
 
 import re
-import numpy as np
+from datetime import date, datetime
+from pathlib import Path
+from typing import Union
+
 import pandas as pd
+from numpy import float32 as npFloat32
+from numpy import nan as npNaN
+
 # import polars as pl
 
-from pathlib import Path
-from datetime import date, datetime
-from typing import Union
 
 '____________________________ function to check float__________________________'
 
@@ -55,7 +58,7 @@ def cum2daily(cumdata: list[float]) -> list[float]:
 
 '_____________ function to get data chunk indices from text file ______________'
 
-def get_dataChunk_indices(text: str) -> zip:
+def get_dataChunk_indices(text: str, Tfile=False) -> zip:
     '''
     Read the text from the dssat *.OUT files to return zip containing the 
     begining and ending indices of data in the file
@@ -67,7 +70,10 @@ def get_dataChunk_indices(text: str) -> zip:
     '''
 
     dataBegin_idx = [m.start()  for m in re.finditer(r"\n"+re.escape('@'), text)]
-    newLine_idx = [m.start()  for m in re.finditer(r"\n\n", text)]
+    if Tfile:
+        newLine_idx = [db-1 for db in dataBegin_idx]
+    else:
+        newLine_idx = [m.start()  for m in re.finditer(r"\n\n", text)]
     lastLine_idx = [m.start()  for m in re.finditer(r"\n", text)][-1]
     dataEnd_idx = []
     for db in dataBegin_idx:
@@ -118,7 +124,7 @@ def Read_DSSAT_Output(filePath: str|Path):
     data = ([line.strip().split() for line in lines[beg:end].split('\n') if line != '']
             for beg, end in get_dataChunk_indices(lines))
     
-    df_gen = (pd.DataFrame.from_records(data[1:], columns=data[0]).astype(np.float32) 
+    df_gen = (pd.DataFrame.from_records(data[1:], columns=data[0]).astype(npFloat32) 
               for i, data in enumerate(data))
     
     
@@ -187,7 +193,7 @@ def extract_required_dssat_outputs(filePath: str|Path, paramList: list[str],
                     rData[prm] = [float(Val)
                                   for Val in dssat_outputs[prm]]                #type: ignore
             else:
-                rData[prm] = [np.nan for _ in dates]
+                rData[prm] = [npNaN for _ in dates]
         df = pd.DataFrame(rData)
         if treatNums is not None:
             df.loc[:,'@TRNO'] = [treatNums[r] for _ in range(len(df))]
@@ -508,7 +514,7 @@ def SoilWatBal(fileDir: str|Path, RunStart: int=1, RunEnd = 'last'):
 
 '__________________________ function to read *.PTT ____________________________'
 
-def read_dssat_obsdata(filePath: str|Path, paramList: list = ['ALL']):
+def read_dssat_obsdata(filePath: str|Path, paramList: list = ['ALL'], sort_index = True):
     '''
     Read DSSAT experiment observation file
     Initially build to read Potato- *.PTT file but could be used for other crops
@@ -529,25 +535,47 @@ def read_dssat_obsdata(filePath: str|Path, paramList: list = ['ALL']):
                           for val in df['DATE']]
         except: df = pd.read_csv(filePath)
     else:
-        df = pd.read_fwf(filePath, colspecs='infer', infer_nrows=100,
-                         skiprows=5)
+        with open(filePath, 'r', errors='replace') as file:
+            lines = ''
+            for line in file.readlines():
+                if not line.startswith('!'):
+                    lines = lines + line.split('!')[0]
+
+        data = ([line.strip().split() for line in lines[beg:end].split('\n') 
+                 if line.strip() != '']
+                for beg, end in get_dataChunk_indices(lines, Tfile=True))
+
+        df_list = [pd.DataFrame.from_records(data[1:], columns=data[0]).astype(str) 
+                    for i, data in enumerate(data)]
+        df = pd.concat(df_list, axis=0)
+        df['@TRNO'] = df['@TRNO'].astype(int)
+        
     if not isinstance(df['DATE'][0], date):
         df['DATE'] = [datetime.strptime(val, '%y%j').date()
                       for val in df.loc[:, 'DATE'].values]
-
-    df.replace(-99.0, np.nan, inplace=True)
+    
+    cols = df.columns.difference(['DATE','@TRNO'])
+    df[cols] = df[cols].astype(float).astype(npFloat32)
+    
+    df.replace(-99.0, npNaN, inplace=True)
     
     try: df.rename(columns={'@TRNO':'TRNO'}, inplace=True)
     except: pass
     
     df.set_index(['TRNO', 'DATE'], inplace=True)
 
-    'If all parameters are required to fetch'
-    'Else listed parameters while calling this func'
+    'If all parameters are required, fetch all'
+    'Else fetch listed parameters while calling this func'
     if paramList[0] == 'ALL':
-        return df.sort_index()
+        if sort_index:
+            return df.sort_index()
+        else:
+            return df
     else:
-        return df.loc[:,paramList].sort_index()
+        if sort_index:
+            return df.loc[:,paramList].sort_index()
+        else:
+            return df.loc[:,paramList]
 
 '___________________________ functions to read X file _________________________'
 
@@ -585,7 +613,7 @@ def sep_sections_in_dict(exp_file):
 def get_section_txt(exp_file, section_name):
     with open(exp_file, 'r', errors='replace') as opened_exp_file:
         fileText = opened_exp_file.read()
-    regex = "(?<="+section_name+")(.*?)(?=\n\n)(?s)"
+    regex = "(?s)(?<="+section_name+")(.*?)(?=\n\n)"
     sec_text = re.search(regex, fileText)
     if sec_text != None:
         return (sec_text.group(0))

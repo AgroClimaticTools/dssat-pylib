@@ -6,8 +6,9 @@ Description: To read, update and create soil profile in any *.SOL file
 
 """
 
-import pandas as pd
 from typing import Union
+
+import pandas as pd
 
 '============================= utility functions =============================='
 
@@ -99,14 +100,14 @@ def read_soil_profile(soilFilePath: str, soil_id: str, OnlyText: bool = False) \
             if param == 1:
                 if line.startswith('*'):
                     param = 0
-                    continue
+                    break
                 elif line == '\n' or line.startswith('!') or line.strip() == '':
                     soil_text = soil_text + line
                     continue
                 elif line.startswith('@'):
                     section.append([])
                     headers.append(line)
-                section[-1].append(line.strip())
+                section[-1].append(line.split('!')[0].strip())
                 soil_text = soil_text + line
                 soil_lines.append(line)
     
@@ -212,9 +213,9 @@ def create_soil_profile(soil_layered_info_df, soil_info_df, headertext_list):
         for row in range(soil_layered_info_df.shape[0]):
             SLB   = formatInput(soil_layered_info_df.loc[row,  'SLB'], 6)
             ALFVG = formatInput(soil_layered_info_df.loc[row,'ALFVG'], 6, decimal=3)
-            # MVG   = formatInput(soil_layered_info_df.loc[row,  'MVG'], 6, decimal=3)
             NVG   = formatInput(soil_layered_info_df.loc[row,  'NVG'], 6, decimal=3)
             MVG   = formatInput(1-(1/float(NVG)), 6, decimal=3)
+            # MVG   = formatInput(soil_layered_info_df.loc[row,  'MVG'], 6, decimal=3)
             WCRES = formatInput(soil_layered_info_df.loc[row,'WCRES'], 6, decimal=3)
             text = text + ''.join([SLB,  ALFVG, MVG, NVG, WCRES])+'\n'
     elif 'SLPX' in soil_layered_info_df.columns:
@@ -251,6 +252,53 @@ def create_soil_profile(soil_layered_info_df, soil_info_df, headertext_list):
             WCRES = formatInput(soil_layered_info_df.loc[row,'WCRES'], 6, decimal=3)
             text = text + ''.join([SLB,  ALFVG, MVG, NVG, WCRES])+'\n'
     return text
+
+'___________________ function to check param in *.SOL file ____________________'
+def fix_missing_soil_param(
+        soil_info_df: pd.DataFrame, soil_layered_info_df: pd.DataFrame
+        ) -> list[pd.DataFrame]:
+    """
+    Check the soil_info_df and soil_layered_info_df for any missing soil parameters,
+    if found, the function supplement the columns in the dataframes with `-99` values
+
+    :param soil_layered_info_df: pandas dataframe, the third table in the 
+                                 soil profile which contains layered soil 
+                                 profile information
+    :param         soil_info_df: pandas dataframe, the second table in the 
+                                 soil profile which contains general soil 
+                                 information
+    :return: soil_info_df, soil_layered_info_df
+    """
+    soil_info_params = ['SCOM', 'SALB', 'SLU1', 'SLDR', 'SLRO', 
+                        'SLNF', 'SLPF', 'SMHB', 'SMPX', 'SMKE']
+    soil_layered_info_params_tier1 = [
+        'SLB','SLMH','SLLL','SDUL','SSAT','SRGF','SSKS','SBDM','SLOC','SLCL',
+        'SLSI','SLCF','SLNI','SLHW','SLHB','SCEC','SADC']
+    soil_layered_info_params_tier2 = [
+        'SLB','SLPX','SLPT','SLPO','CACO3','SLAL','SLFE','SLMN','SLBS','SLPA',
+        'SLPB','SLKE','SLMG','SLNA','SLSU','SLEC','SLCA']
+    soil_layered_info_params_tier3 = ['SLB','ALFVG','MVG','NVG','WCRES']
+    
+    for soil_param in soil_info_params:
+        if not soil_param in soil_info_df.columns:
+            soil_info_df[soil_param] = ['-99' for _ in range(len(soil_info_df))]
+
+    for soil_param in soil_layered_info_params_tier1:
+        if not soil_param in soil_layered_info_df.columns:
+            soil_layered_info_df[soil_param] = \
+                ['-99' for _ in range(len(soil_layered_info_df))]
+    if 'SLPX' in soil_layered_info_df.columns:
+        for soil_param in soil_layered_info_params_tier2:
+            if not soil_param in soil_layered_info_df.columns:
+                soil_layered_info_df[soil_param] = \
+                    ['-99' for _ in range(len(soil_layered_info_df))]
+    if 'ALFVG' in soil_layered_info_df.columns:
+        for soil_param in soil_layered_info_params_tier3:
+            if not soil_param in soil_layered_info_df.columns:
+                soil_layered_info_df[soil_param] = \
+                    ['-99' for _ in range(len(soil_layered_info_df))]
+
+    return [soil_info_df, soil_layered_info_df]
 
 
 '_______________________ function for update *.SOL file _______________________'
@@ -299,6 +347,9 @@ def update_soil_layer_param(soilFilePath: str, soil_id: str, param_name_list: li
     '''
     soil_info_df, soil_layered_info_df, soil_lines, old_soil_profile, \
                   headertext_list = read_soil_profile(soilFilePath, soil_id)
+    soil_info_df, soil_layered_info_df = \
+        fix_missing_soil_param(soil_info_df, soil_layered_info_df)
+    
     for i, param_name in enumerate(param_name_list):
         if param_name in soil_layered_info_df.columns:
             soil_layered_info_df.loc[:, param_name] = param_values_list[i]      # type: ignore
